@@ -5,35 +5,31 @@
 # IMPORT MODULES
 import numpy as np  # http://www.numpy.org
 import matplotlib.pyplot as plt   # http://matplotlib.org
-
-
+g = 9.81
+earth_radius = 6.3e6
+omega = 0.000072792
+rho = 1.25
 class seaBreezeModel:
     """ A simple Sea breeze model"""
     
-    def __init__(self,lat,A,phase,gamma,dpdx_synop):
+    def __init__(self,lat,A,phase,gamma,dpdx_synop,dpdy_synop):
         """ set the parameters of the model"""
         
-        # constants
-        self.omega = 0.000072792  # angular velocity Earth [s^-1]
-        self.rho = 1.25 # density
-        self.phi = 0.0 # phase of the pressure gradient
-        self.earth_radius = 6.3e6
-        self.g = 9.81
-        
+        # parameters
         self.phase = phase # phase of surface pressure gradient in time
         self.A = A       # parameters
         self.lat = lat # latitude of IJmuiden in degress
         self.latRad = self.lat * np.pi/180
         self.gamma = gamma
-        
-
-        
+                
         # infered parameters
-        self.fcor = 2 * self.omega *  np.sin(lat * np.pi/180)  # Coriolis parameter
-        self.vg = 1./(self.rho *self.fcor)* dpdx_synop        
+        self.fcor = 2 * omega *  np.sin(lat * np.pi/180)  # Coriolis parameter
         
-        self.C1= - A / ( self.fcor * self.rho ) * ( ( self.omega**2 / ( self.fcor**2 - self.omega**2 ) ) + 1)
-        self.C3 = self.A * self.omega / (self. rho * ( self.fcor**2 - self.omega**2 ) )
+        self.vg = 1./(rho *self.fcor)* dpdx_synop
+        self.ug = -1./(rho *self.fcor) * dpdy_synop        
+        
+        self.C1= - A / ( self.fcor * rho ) * ( ( omega**2 / ( self.fcor**2 - omega**2 ) ) + 1)
+        self.C3 = self.A * omega / (rho * ( self.fcor**2 - omega**2 ) )
         
     def fIdeal(self,t,u,v,*arg):
         """evoltuiion equation for the sea breeze model in an ideal case without 
@@ -42,30 +38,30 @@ class seaBreezeModel:
     
     def fuIdeal(self,t,u,v):
         """evolution equation for the x-component"""
-        return self.fcor*v - (self.A/self.rho)* np.cos((self.omega*t)+self.phase) 
+        return self.fcor*v - (self.A/rho)* np.cos((omega*t)+self.phase) 
 
     def fvIdeal(self,t,u,v):
         """evolution equation for the y-component"""
         return -self.fcor * u
     
     
-    def f(self,t,u,v,vg):
+    def f(self,t,u,v,ug,vg):
         """evoltuiion equation for the sea breeze model"""
-        return self.fu(t,u,v,vg), self.fv(t,u,v)
+        return self.fu(t,u,v,vg), self.fv(t,u,v,ug)
     
     def fu(self,t,u,v,vg):
         """evolution equation for the x-component"""
         return  self.fcor*(v-vg) \
-                - (self.A/self.rho)* np.cos((self.omega*t)+self.phase) \
+                - (self.A/rho)* np.cos((omega*t)+self.phase) \
                 - self.gamma * u \
-                + u*v*np.tan(self.latRad)/self.earth_radius 
+                + u*v*np.tan(self.latRad)/earth_radius 
      
 
-    def fv(self,t,u,v):
+    def fv(self,t,u,v,ug):
         """evolution equation for the y-component"""
-        return - self.fcor * u \
+        return - self.fcor * (u -ug) \
                - self.gamma * v \
-               - u**2 * np.tan(self.latRad)/self.earth_radius 
+               - u**2 * np.tan(self.latRad)/earth_radius 
     
 class integration:
     """ a object that contains different methods for the integration of a 2D model"""
@@ -137,29 +133,29 @@ class integration:
         k11,k12 = f(args[0],
                     args[1], 
                     args[2],
-                    args[3])
+                    args[3],args[4])
         
         k21,k22 = f(args[0] + h/2., 
                     args[1] + h/2. * k11, 
                     args[2] + h/2. * k12,
-                    args[3])
+                    args[3],args[4])
         
         k31,k32 = f(args[0] + h/2.,
                     args[1] + h/2. * k21, 
                     args[2] + h/2. * k22,
-                    args[3])
+                    args[3],args[4])
         
         k41,k42 = f(args[0] + h,
                     args[1] + h * k31, 
                     args[2] + h * k32,
-                    args[3])
+                    args[3],args[4])
         
         retx = x_start + h/6. * ( k11 + 2.*k21 + 2.*k31 + k41)
         rety = y_start + h/6. * ( k12 + 2.*k22 + 2.*k32 + k42)
         
         return retx, rety
     
-    def integrate2D(self,f,vg,u_init=0.,v_init=0.):
+    def integrate2D(self,f,ug,vg,u_init=0.,v_init=0.):
         """ 
         scheme to integrate a 2-dimensional ODE
         (note that the integration scheme is already chosen at this point)
@@ -176,11 +172,11 @@ class integration:
         self.v[0] = v_init
         
         for t in range(self.iters-1): 
-            self.u[t+1], self.v[t+1] = self.int_scheme(self.u[t], self.v[t], f ,  self.time[t],self.u[t],self.v[t],vg[t])
+            self.u[t+1], self.v[t+1] = self.int_scheme(self.u[t], self.v[t], f ,  self.time[t],self.u[t],self.v[t], ug[t], vg[t])
             
             
             if  self.corrector_step:
-                self.u[t+1],self.v[t+1] = self.int_scheme(self.u[t], self.v[t], f ,  self.time[t],self.u[t+1],self.v[t+1],vg[t])
+                self.u[t+1],self.v[t+1] = self.int_scheme(self.u[t], self.v[t], f ,  self.time[t],self.u[t+1],self.v[t+1],ug[t],vg[t])
 
 
 #%% =============================================================================
@@ -222,8 +218,11 @@ if __name__=="__main__":
         
     
     # Analytical solution
-    u_ana = np.zeros((integrator.iters))# analytical solution x-component velocity
-    u_ana = sb.C1 * np.sin(sb.fcor * time) +  sb.C3 * np.sin((sb.omega * time) + sb.phase) 
+    u_ana = np.zeros((integrator.iters)) # analytical solution x-component velocity
+    u_ana = sb.C1 * np.sin(sb.fcor * time) +  sb.C3 * np.sin((omega * time) + sb.phase)
+    
+    v_ana = np.zeros((integrator.iters)) # analytical solution y-component velocity
+    v_ana = sb.C1 * np.cos(sb.fcor * time) +  sb.C3 * np.cos((omega * time) + sb.phase)*sb.fcor/omega
     
     # MAKE PLOT of evolution in time of u and u_ana
     time_axis = time / 3600.
@@ -241,15 +240,18 @@ if __name__=="__main__":
     plt.ylabel('u [m/s]', fontsize=14) # label along x-axes
     plt.legend()
     plt.grid(True)
-    plt.savefig("img/task1a.png") # save plot as png-file
+    plt.ylim(-30,30)
+    plt.savefig("../img/task1a.png") # save plot as png-file
     plt.show() # show plot on screen
+    
+    
     
     plt.figure()
     plt.plot(time_axis, v_euler, label = 'v (numerical solution) euler')
     plt.plot(time_axis, v_matsuno, label = 'v (numerical solution) matsuno')
     plt.plot(time_axis, v_rk4, label = 'v (numerical solution) rk4')
 
-    #plt.plot(time_axis, v_ana, 'k:', label = 'v (analytical solution)')
+    plt.plot(time_axis, v_ana, 'k:', label = 'v (analytical solution)')
     plt.axis([0,time_axis[integrator.iters-1],-25.0,25.0])  # define axes 
     plt.xticks(np.arange(0,time_axis[integrator.iters-1],6), fontsize=12) 
     plt.yticks(np.arange(-25.0,25.0,5), fontsize=12) 
@@ -257,5 +259,6 @@ if __name__=="__main__":
     plt.ylabel('v [m/s]', fontsize=14) # label along x-axes
     plt.legend()
     plt.grid(True)
-    plt.savefig("img/task1b.png") # save plot as png-file
+    plt.ylim(-30,30)
+    plt.savefig("../img/task1b.png") # save plot as png-file
     plt.show() # show plot on screen
