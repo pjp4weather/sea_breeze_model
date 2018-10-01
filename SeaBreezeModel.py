@@ -1,14 +1,19 @@
-# Exercise 1.14 Atmospheric Dynamics 2018 (page 96): 
-# http://www.staff.science.uu.nl/~delde102/AtmosphericDynamics[2018]Ch1.pdf
-
-# https://docs.python.org/2.7/
+#!/usr/bin/env python2
+# -*- coding: utf-8 -*-
+"""
+In this module all necessary functions for the sea breeze model are defined together 
+with a simpler version that is called idealised. 
+"""
 # IMPORT MODULES
 import numpy as np  # http://www.numpy.org
 import matplotlib.pyplot as plt   # http://matplotlib.org
+
+# module constants
 g = 9.81
 earth_radius = 6.3e6
 omega = 0.000072792
 rho = 1.25
+
 class seaBreezeModel:
     """ A simple Sea breeze model"""
     
@@ -17,13 +22,15 @@ class seaBreezeModel:
         
         # parameters
         self.phase = phase # phase of surface pressure gradient in time
-        self.A = A       # parameters
-        self.lat = lat # latitude of IJmuiden in degress
-        self.latRad = self.lat * np.pi/180
-        self.gamma = gamma
+        self.A = A         # parameters
+        self.lat = lat     # latitude of IJmuiden in degress
+        self.gamma = gamma # damping coeeficent
+        
+       
                 
         # infered parameters
-        self.fcor = 2 * omega *  np.sin(lat * np.pi/180)  # Coriolis parameter
+        self.latRad = self.lat * np.pi/180
+        self.fcor = 2 * omega *  np.sin(self.latRad)  # Coriolis parameter
         
         self.vg = 1./(rho *self.fcor)* dpdx_synop
         self.ug = -1./(rho *self.fcor) * dpdy_synop        
@@ -31,6 +38,8 @@ class seaBreezeModel:
         self.C1= - A / ( self.fcor * rho ) * ( ( omega**2 / ( self.fcor**2 - omega**2 ) ) + 1)
         self.C3 = self.A * omega / (rho * ( self.fcor**2 - omega**2 ) )
         
+    
+    # idealised sea breeze model
     def fIdeal(self,t,u,v,*arg):
         """evoltuiion equation for the sea breeze model in an ideal case without 
         friction, geostrophic wind and the tan(lat) term"""
@@ -45,6 +54,7 @@ class seaBreezeModel:
         return -self.fcor * u
     
     
+    # more sophisticated sea breeze model
     def f(self,t,u,v,ug,vg):
         """evoltuiion equation for the sea breeze model"""
         return self.fu(t,u,v,vg), self.fv(t,u,v,ug)
@@ -172,11 +182,13 @@ class integration:
         self.v[0] = v_init
         
         for t in range(self.iters-1): 
-            self.u[t+1], self.v[t+1] = self.int_scheme(self.u[t], self.v[t], f ,  self.time[t],self.u[t],self.v[t], ug[t], vg[t])
+            self.u[t+1], self.v[t+1] = self.int_scheme(self.u[t], self.v[t], \
+                  f ,  self.time[t],self.u[t],self.v[t], ug[t], vg[t])
             
             
             if  self.corrector_step:
-                self.u[t+1],self.v[t+1] = self.int_scheme(self.u[t], self.v[t], f ,  self.time[t],self.u[t+1],self.v[t+1],ug[t],vg[t])
+                self.u[t+1],self.v[t+1] = self.int_scheme(self.u[t], self.v[t],\
+                      f ,  self.time[t],self.u[t+1],self.v[t+1],ug[t],vg[t])
 
 
 #%% =============================================================================
@@ -184,6 +196,7 @@ class integration:
 # =============================================================================
 if __name__=="__main__":
     plt.close("all")
+    
     # define integration method
     dt = 360.
     tmax_h = 48.
@@ -196,24 +209,27 @@ if __name__=="__main__":
     phase = 0.
     gamma = 0.
     
-    
+    # euler method
     integrator = integration(dt,tmax_h,corrector_step,method)
-    vg = np.zeros(integrator.iters)
-    sb = seaBreezeModel(lat,A,phase,gamma,vg)
-    integrator.integrate2D(sb.fIdeal,sb.vg)
+    ug,vg = np.zeros(integrator.iters),np.zeros(integrator.iters)
+    
+    sb = seaBreezeModel(lat,A,phase,gamma,ug,vg)
+    integrator.integrate2D(sb.fIdeal,ug,vg)
     u_euler,v_euler,time = integrator.u,integrator.v, integrator.time 
     
+    # matsuno method
     corrector_step = True
     
     integrator = integration(dt,tmax_h,corrector_step,method)
-    integrator.integrate2D(sb.fIdeal, sb.vg)
+    integrator.integrate2D(sb.fIdeal,ug, vg)
     u_matsuno,v_matsuno,time = integrator.u,integrator.v, integrator.time 
     
+    # rk4 method
     corrector_step = False
     method = "rk4"
     
     integrator = integration(dt,tmax_h,corrector_step,method)
-    integrator.integrate2D(sb.fIdeal,vg)
+    integrator.integrate2D(sb.fIdeal,ug,vg)
     u_rk4,v_rk4,time = integrator.u,integrator.v, integrator.time 
         
     
@@ -224,7 +240,9 @@ if __name__=="__main__":
     v_ana = np.zeros((integrator.iters)) # analytical solution y-component velocity
     v_ana = sb.C1 * np.cos(sb.fcor * time) +  sb.C3 * np.cos((omega * time) + sb.phase)*sb.fcor/omega
     
-    # MAKE PLOT of evolution in time of u and u_ana
+# =============================================================================
+#     # MAKE PLOT of evolution in time of u and u_ana
+# =============================================================================
     time_axis = time / 3600.
     
     plt.figure()
@@ -241,7 +259,7 @@ if __name__=="__main__":
     plt.legend()
     plt.grid(True)
     plt.ylim(-30,30)
-    plt.savefig("../img/task1a.png") # save plot as png-file
+    #plt.savefig("../img/task1a.png") # save plot as png-file
     plt.show() # show plot on screen
     
     
@@ -260,5 +278,5 @@ if __name__=="__main__":
     plt.legend()
     plt.grid(True)
     plt.ylim(-30,30)
-    plt.savefig("../img/task1b.png") # save plot as png-file
+    #plt.savefig("../img/task1b.png") # save plot as png-file
     plt.show() # show plot on screen
